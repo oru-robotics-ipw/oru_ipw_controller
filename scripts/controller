@@ -1,0 +1,7 @@
+#!/usr/bin/env python2
+"""Start controller node"""
+
+import oru_ipw_controller
+
+if __name__ == '__main__':
+    oru_ipw_controller.main()
