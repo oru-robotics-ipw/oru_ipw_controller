@@ -12,7 +12,7 @@ find_package(catkin REQUIRED COMPONENTS
   am_driver_safe
   dynamic_reconfigure
   geometry_msgs
-  message_generation
+  oru_ipw_msgs
   rospy
   sensor_msgs
   std_msgs
@@ -53,10 +53,10 @@ catkin_python_setup()
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-add_message_files(
-  FILES
-    SimpleBatteryStatus.msg
-)
+#add_message_files(
+#  FILES
+#    SimpleBatteryStatus.msg
+#)
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -73,10 +73,10 @@ add_message_files(
 # )
 
 ## Generate added messages and services with any dependencies listed here
-generate_messages(
-  DEPENDENCIES
-    std_msgs
-)
+#generate_messages(
+#  DEPENDENCIES
+#    std_msgs
+#)
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -109,7 +109,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES oru_ipw_controller
-  CATKIN_DEPENDS message_runtime geometry_msgs std_msgs std_srvs
+  CATKIN_DEPENDS geometry_msgs oru_ipw_msgs sensor_msgs std_msgs std_srvs
 #  DEPENDS system_lib
 )
 

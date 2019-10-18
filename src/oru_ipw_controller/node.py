@@ -9,7 +9,7 @@ from dynamic_reconfigure.encoding import Config
 from dynamic_reconfigure.server import Server as DynReconfigureServer
 from geometry_msgs.msg import Twist
 from oru_ipw_controller.cfg import OruIpwControllerConfig
-from oru_ipw_controller.msg import SimpleBatteryStatus
+from oru_ipw_msgs.msg import SimpleBatteryStatus
 from sensor_msgs.msg import BatteryState
 from std_msgs.msg import UInt16
 from std_srvs.srv import Trigger, TriggerRequest, TriggerResponse
