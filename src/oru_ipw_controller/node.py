@@ -3,7 +3,7 @@
 from __future__ import (print_function, absolute_import, division)
 
 import rospy
-from am_driver.msg import BatteryStatus, CurrentStatus, Mode, SensorStatus
+from am_driver.msg import BatteryStatus, CurrentStatus, Mode, SensorStatus, WheelPower
 from am_driver_safe.srv import TifCmd
 from dynamic_reconfigure.encoding import Config
 from dynamic_reconfigure.server import Server as DynReconfigureServer
@@ -73,6 +73,10 @@ class Node(object):
                                              UInt16,
                                              latch=False,
                                              queue_size=1)
+        self._cmd_power_pub = rospy.Publisher('hrp/cmd_power',
+                                              WheelPower,
+                                              latch=False,
+                                              queue_size=1)
         self._tif_cmd_service_proxy = rospy.ServiceProxy('hrp/tif_command', TifCmd)
 
         # Cyclic timer for heartbeat functionality
@@ -223,9 +227,13 @@ class Node(object):
 
     def stop(self):
         """Send command to stop"""
-        t = Twist()
-        t.angular.z = t.linear.x = 0
-        self._cmd_vel_pub.publish(t)
+        twist = Twist()
+        twist.linear.x = twist.angular.z = 0
+        self._cmd_vel_pub.publish(twist)
+
+        wheel_power = WheelPower()
+        wheel_power.left = wheel_power.right = 0
+        self._cmd_power_pub.publish(wheel_power)
         self._driving = False
 
     def set_headlights(self, status):
