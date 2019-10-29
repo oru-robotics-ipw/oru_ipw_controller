@@ -10,7 +10,7 @@ from dynamic_reconfigure.server import Server as DynReconfigureServer
 from geometry_msgs.msg import Twist
 from oru_ipw_controller.cfg import OruIpwControllerConfig
 from oru_ipw_msgs.msg import SimpleBatteryStatus
-from sensor_msgs.msg import BatteryState
+from sensor_msgs.msg import BatteryState, Joy
 from std_msgs.msg import UInt16
 from std_srvs.srv import Trigger, TriggerRequest, TriggerResponse
 
@@ -23,6 +23,7 @@ class Node(object):
         self._collision = False
         self._cfg = None
         self._driving = False
+        self._soft_emergency_stop = False
         self._last_cmd_vel_ts = rospy.Time.now()
         self._drive_timout = rospy.Duration(0.5)
         self._battery_status = BatteryStatus()
@@ -50,6 +51,11 @@ class Node(object):
                                                    SimpleBatteryStatus,
                                                    latch=True,
                                                    queue_size=1)
+        # Subscribe to joystick to handle buttons.
+        self._joy_sub = rospy.Subscriber('joy/joy',
+                                         Joy,
+                                         callback=self._callback_joy,
+                                         queue_size=1)
 
         # Driver communication
         self._battery_status_sub = rospy.Subscriber('hrp/battery_status',
@@ -110,9 +116,23 @@ class Node(object):
         :type msg: Twist
         """
         self._driving = msg.angular.z != 0 or msg.linear.x != 0
-        if not self._collision:
+        if not self._collision and not self._soft_emergency_stop:
             self._last_cmd_vel_ts = rospy.Time.now()
             self._cmd_vel_pub.publish(msg)
+
+    def _callback_joy(self, msg):
+        """Joystick/gamepad callback
+
+        :type msg: Joy
+        """
+        if len(msg.buttons) >= 2:
+            if msg.buttons[1] == 1:
+                self._soft_emergency_stop = True
+                self.stop()
+                rospy.logerr("Estop activated")
+            elif msg.buttons[0] == 1 and msg.buttons[6] == 1:
+                self._soft_emergency_stop = False
+                rospy.loginfo("Estop deactivated")
 
     def _callback_battery_status(self, msg):
         """Callback from hrp/battery_status
