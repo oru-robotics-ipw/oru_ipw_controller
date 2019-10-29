@@ -129,9 +129,11 @@ class Node(object):
             if msg.buttons[1] == 1:
                 self._soft_emergency_stop = True
                 self.stop()
+                self._send_mode(Mode.MODE_SOUND_FAULT)
                 rospy.logerr("Estop activated")
             elif msg.buttons[0] == 1 and msg.buttons[6] == 1:
                 self._soft_emergency_stop = False
+                self._send_mode(Mode.MODE_SOUND_LONG_BEEP)
                 rospy.loginfo("Estop deactivated")
 
     def _callback_battery_status(self, msg):
