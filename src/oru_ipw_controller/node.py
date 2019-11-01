@@ -2,34 +2,47 @@
 
 from __future__ import (print_function, absolute_import, division)
 
+import events
 import rospy
-from am_driver.msg import BatteryStatus, CurrentStatus, Mode, SensorStatus, WheelPower
+from am_driver.msg import CurrentStatus, Mode, SensorStatus, WheelPower
 from am_driver_safe.srv import TifCmd
 from dynamic_reconfigure.encoding import Config
 from dynamic_reconfigure.server import Server as DynReconfigureServer
 from geometry_msgs.msg import Twist
 from oru_ipw_controller.cfg import OruIpwControllerConfig
-from oru_ipw_msgs.msg import SimpleBatteryStatus
-from sensor_msgs.msg import BatteryState, Joy
 from std_msgs.msg import UInt16
 from std_srvs.srv import Trigger, TriggerRequest, TriggerResponse
 
+from oru_ipw_controller.battery_handler import BatteryHandler
+from oru_ipw_controller.soft_estop import SoftEstop
 
-class Node(object):
+
+class Node(object, events.Events):
     """Main node class"""
+
+    __events__ = ('on_reconfigure',)
 
     def __init__(self):
         """Constructor"""
+        super(Node, self).__init__()
         self._collision = False
-        self._cfg = None
+        self._cfg = Config(OruIpwControllerConfig.defaults)
         self._driving = False
-        self._soft_emergency_stop = False
         self._last_cmd_vel_ts = rospy.Time.now()
         self._drive_timout = rospy.Duration(0.5)
-        self._battery_status = BatteryStatus()
         self._current_status = CurrentStatus()
         self._senor_status = SensorStatus()
 
+        # Estop handling
+        self._soft_estop = SoftEstop()
+        self._soft_estop.on_stop += self._handle_estop
+        self._soft_estop.on_resume += self._handle_resume
+
+        # Battery handling
+        self._battery_handler = BatteryHandler()
+        self.on_reconfigure += self._battery_handler.handle_reconfigure
+
+        # Dynamic reconfiguration
         self._dyn_reconfigure_srv = DynReconfigureServer(OruIpwControllerConfig, self._dynamic_config_callback)
 
         # Frontend communication
@@ -39,29 +52,8 @@ class Node(object):
                                              queue_size=1)
         self._exit_charging_station_srv = rospy.Service('exit_charging_station', Trigger,
                                                         self.handle_exit_charging_station)
-        self._battery_a_pub = rospy.Publisher('battery/a',
-                                              BatteryState,
-                                              latch=True,
-                                              queue_size=1)
-        self._battery_b_pub = rospy.Publisher('battery/b',
-                                              BatteryState,
-                                              latch=True,
-                                              queue_size=1)
-        self._battery_status_pub = rospy.Publisher('battery/status',
-                                                   SimpleBatteryStatus,
-                                                   latch=True,
-                                                   queue_size=1)
-        # Subscribe to joystick to handle buttons.
-        self._joy_sub = rospy.Subscriber('joy/joy',
-                                         Joy,
-                                         callback=self._callback_joy,
-                                         queue_size=1)
 
         # Driver communication
-        self._battery_status_sub = rospy.Subscriber('hrp/battery_status',
-                                                    BatteryStatus,
-                                                    callback=self._callback_battery_status,
-                                                    queue_size=1)
         self._current_status_sub = rospy.Subscriber('hrp/current_status',
                                                     CurrentStatus,
                                                     callback=self._callback_current_status,
@@ -98,6 +90,7 @@ class Node(object):
         :return:
         """
         self._cfg = config
+        self.on_reconfigure(config)
         self._drive_timout = rospy.Duration(config['drive_timeout'])
         return config
 
@@ -116,84 +109,18 @@ class Node(object):
         :type msg: Twist
         """
         self._driving = msg.angular.z != 0 or msg.linear.x != 0
-        if not self._collision and not self._soft_emergency_stop:
+        if not self._collision and not self._soft_estop.stopped:
             self._last_cmd_vel_ts = rospy.Time.now()
             self._cmd_vel_pub.publish(msg)
 
-    def _callback_joy(self, msg):
-        """Joystick/gamepad callback
+    def _handle_estop(self):
+        """Actions to perform when enabling soft estop"""
+        self.stop()
+        self._send_mode(Mode.MODE_SOUND_FAULT)
 
-        :type msg: Joy
-        """
-        if len(msg.buttons) >= 2:
-            if msg.buttons[1] == 1:
-                self._soft_emergency_stop = True
-                self.stop()
-                self._send_mode(Mode.MODE_SOUND_FAULT)
-                rospy.logerr("Estop activated")
-            elif msg.buttons[0] == 1 and msg.buttons[6] == 1:
-                self._soft_emergency_stop = False
-                self._send_mode(Mode.MODE_SOUND_LONG_BEEP)
-                rospy.loginfo("Estop deactivated")
-
-    def _callback_battery_status(self, msg):
-        """Callback from hrp/battery_status
-
-        :type msg: BatteryStatus
-        """
-        self._battery_status = msg
-        low_level = self._cfg['low_battery_level']  # type: float
-        a_volt = msg.batteryAVoltage / 1000
-        b_volt = msg.batteryBVoltage / 1000
-        battery_low = False
-        if a_volt < low_level or b_volt < low_level:
-            battery_low = True
-            rospy.logwarn_throttle(30, "Low battery level")
-            self._send_mode(Mode.MODE_SOUND_START_CUTTING)
-
-        # Interpret sensor status
-        in_cs = self._senor_status.sensorStatus & SensorStatus.SENSOR_STATUS_IN_CS != 0
-        charging = self._senor_status.sensorStatus & SensorStatus.SENSOR_STATUS_CHARGING != 0
-
-        # Publish simple battery status for display in web UI
-        self._battery_status_pub.publish(SimpleBatteryStatus(
-            header=msg.header,
-            battery_low=battery_low,
-            is_charging=charging,
-            is_fully_charged=in_cs and not charging))
-
-        # Publish detailed battery state messages
-        supply_status = BatteryState.POWER_SUPPLY_STATUS_UNKNOWN
-        if in_cs and charging:
-            supply_status = BatteryState.POWER_SUPPLY_STATUS_CHARGING
-        elif in_cs and not charging:
-            supply_status = BatteryState.POWER_SUPPLY_STATUS_FULL
-        elif not in_cs:
-            supply_status = BatteryState.POWER_SUPPLY_STATUS_DISCHARGING
-
-        def _make_state(location, voltage, current):
-            """Create battery state message. Most information is unavailable."""
-            nan = float('NaN')
-            return BatteryState(
-                header=msg.header,
-                voltage=voltage,
-                current=current,
-                charge=nan,
-                capacity=nan,
-                design_capacity=nan,
-                percentage=nan,
-                power_supply_status=supply_status,
-                power_supply_health=BatteryState.POWER_SUPPLY_HEALTH_UNKNOWN,
-                power_supply_technology=BatteryState.POWER_SUPPLY_TECHNOLOGY_LION,
-                present=True,
-                location=location)
-
-        self._battery_a_pub.publish(_make_state(voltage=a_volt,
-                                                current=msg.batteryACurrent / 1000,
-                                                location='A'))
-        self._battery_b_pub.publish(_make_state(voltage=b_volt,
-                                                current=msg.batteryBCurrent / 1000,
-                                                location='B'))
+    def _handle_resume(self):
+        """Actions to perform when disabling soft estop"""
+        self._send_mode(Mode.MODE_SOUND_LONG_BEEP)
 
     def _callback_current_status(self, msg):
         """Callback from hrp/current_status
@@ -275,6 +202,10 @@ class Node(object):
         # We can't exit the charging station on our own. As a workaround we switch to random mode and let it back us
         # out. Note that this will not do anything if the charge is low, in that case we need the user to physically
         # drag the robot out.
+        if self._soft_estop.stopped:
+            reason = "Soft emergency stop engaged. Not exiting charging station!"
+            rospy.logwarn(reason)
+            return TriggerResponse(success=False, message=reason)
         if not (self._senor_status.sensorStatus & SensorStatus.SENSOR_STATUS_IN_CS):
             reason = "Exiting charging station requested, but we aren't in it."
             rospy.logwarn(reason)
@@ -299,3 +230,7 @@ def main():
 
     # Spin on ROS message bus
     rospy.spin()
+
+
+if __name__ == '__main__':
+    main()

@@ -7,7 +7,7 @@ from catkin_pkg.python_setup import generate_distutils_setup
 setup_args = generate_distutils_setup(
     packages=['oru_ipw_controller'],
     package_dir={'': 'src'},
-    install_requires=[],
+    install_requires=['events'],
 )
 
 setup(**setup_args)
