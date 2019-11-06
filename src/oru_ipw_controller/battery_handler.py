@@ -62,8 +62,6 @@ class BatteryHandler(object, events.Events):
         if a_volt < low_level or b_volt < low_level:
             battery_low = True
             self.on_low_battery()
-            rospy.logwarn_throttle(30, "Low battery level")
-            self._send_mode(Mode.MODE_SOUND_START_CUTTING)
 
         # Interpret sensor status
         in_cs = self._senor_status.sensorStatus & SensorStatus.SENSOR_STATUS_IN_CS != 0

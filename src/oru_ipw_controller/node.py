@@ -41,6 +41,7 @@ class Node(object, events.Events):
         # Battery handling
         self._battery_handler = BatteryHandler()
         self.on_reconfigure += self._battery_handler.handle_reconfigure
+        self._battery_handler.on_low_battery += self._handle_low_battery
 
         # Dynamic reconfiguration
         self._dyn_reconfigure_srv = DynReconfigureServer(OruIpwControllerConfig, self._dynamic_config_callback)
@@ -112,6 +113,11 @@ class Node(object, events.Events):
         if not self._collision and not self._soft_estop.stopped:
             self._last_cmd_vel_ts = rospy.Time.now()
             self._cmd_vel_pub.publish(msg)
+
+    def _handle_low_battery(self):
+        """Actions to perform on low battery"""
+        rospy.logwarn_throttle(30, "Low battery level")
+        self._send_mode(Mode.MODE_SOUND_START_CUTTING)
 
     def _handle_estop(self):
         """Actions to perform when enabling soft estop"""
