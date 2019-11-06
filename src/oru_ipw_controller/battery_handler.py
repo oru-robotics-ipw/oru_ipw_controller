@@ -1,6 +1,6 @@
 import events
 import rospy
-from am_driver.msg import BatteryStatus, SensorStatus, Mode
+from am_driver.msg import BatteryStatus, SensorStatus
 from dynamic_reconfigure.encoding import Config
 from oru_ipw_controller.cfg import OruIpwControllerConfig
 from oru_ipw_msgs.msg import SimpleBatteryStatus
