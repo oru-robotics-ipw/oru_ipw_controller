@@ -11,7 +11,7 @@ from dynamic_reconfigure.server import Server as DynReconfigureServer
 from geometry_msgs.msg import Twist
 from oru_ipw_controller.cfg import OruIpwControllerConfig
 from std_msgs.msg import UInt16
-from std_srvs.srv import Trigger, TriggerRequest, TriggerResponse
+from std_srvs.srv import Trigger, TriggerRequest, TriggerResponse, Empty
 
 from oru_ipw_controller.battery_handler import BatteryHandler
 from oru_ipw_controller.soft_estop import SoftEstop
@@ -77,6 +77,7 @@ class Node(object, events.Events):
                                               latch=False,
                                               queue_size=1)
         self._tif_cmd_service_proxy = rospy.ServiceProxy('hrp/tif_command', TifCmd)
+        self.reset_pid_service_proxy = rospy.ServiceProxy('hrp/reset_pid', Empty)
 
         # Cyclic timer for heartbeat functionality
         self._timer = rospy.Timer(rospy.Duration(0.5), self._timer_callback)
@@ -190,6 +191,7 @@ class Node(object, events.Events):
         wheel_power.left = wheel_power.right = 0
         self._cmd_power_pub.publish(wheel_power)
         self._driving = False
+        self.reset_pid_service_proxy.call()
 
     def set_headlights(self, status):
         """Set headlights off/on
